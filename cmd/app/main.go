@@ -148,10 +148,14 @@ func newConfig(opts options) (*config, error) {
 	return &opts.cfg, nil
 }
 
+// validLogFormat returns whether the provided log format is supported.
 func validLogFormat(format string) bool {
 	return format == "json" || format == "text"
 }
 
+// newLogger creates a new structured logger with the given options. The logger writes to either
+// a file specified by opts.log.output or stdout if no output file is provided. It supports
+// both JSON and text formats.
 func newLogger(opts options) (*slog.Logger, error) {
 	if !validLogFormat(opts.log.format) {
 		return nil, fmt.Errorf("unsupported log format: %s", opts.log.format)
