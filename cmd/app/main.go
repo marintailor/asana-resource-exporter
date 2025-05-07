@@ -72,10 +72,11 @@ func main() {
 	}
 
 	if err := app.run(); err != nil {
-		app.log.Error("app run", slog.String("error", err.Error()))
+		app.log.Error("application error",
+			slog.String("error", err.Error()))
+		os.Exit(1)
 	}
-
-	app.log.Debug("app finished")
+	app.log.Info("application completed successfully")
 }
 
 // newApp creates and configures a new application instance.
