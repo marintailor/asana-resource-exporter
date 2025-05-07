@@ -19,18 +19,32 @@ import (
 )
 
 const (
-	defaultEntrypoint = "https://app.asana.com/api/1.0"
-	defaultLogFormat  = "text"
-	defaultLogOutput  = ""
-	defaultRateLimit  = 150
-	defaultRetryAfter = 5
+	// API defaults
+	defaultEntrypoint string = "https://app.asana.com/api/1.0"
+	defaultRateLimit  int    = 150
+	defaultRetryAfter int    = 5
+
+	// Logging defaults
+	defaultLogFormat string = "text"
+	defaultLogOutput string = ""
+
+	// Data defautls
+	dataDir     string = "data"
+	permissions int    = 0o755
 )
 
-// app represents the main application structure.
+// app orchestrates the resource export operations.
 type app struct {
 	cfg    *config
 	log    *slog.Logger
 	client *internal.Client
+}
+
+// Resource represents an Asana resource with its properties.
+type Resource struct {
+	GID          string `json:"gid"`
+	Name         string `json:"name"`
+	ResourceType string `json:"resource_type"`
 }
 
 type options struct {
@@ -48,12 +62,6 @@ type logging struct {
 	debug  bool
 	format string
 	output string
-}
-
-type Resource struct {
-	GID          string `json:"gid"`
-	Name         string `json:"name"`
-	ResourceType string `json:"resource_type"`
 }
 
 func main() {
@@ -296,30 +304,23 @@ func (a *app) storeResource(rc Resource) {
 	}
 }
 
+// retryAfter parses a Retry-After header value and returns the duration to wait.
+// It supports HTTP-date, delta-seconds, and duration formats.
 func (a *app) retryAfter(s string) time.Duration {
-	parseTime, err := http.ParseTime(s)
-	if err != nil {
-		a.log.Debug("unable to parse time", slog.String("ParseTime", err.Error()))
-	}
-	if err == nil {
-		return time.Duration(parseTime.Second())
+	if d, err := time.ParseDuration(s); err == nil {
+		return d
 	}
 
-	parseDuration, err := time.ParseDuration(s)
-	if err != nil {
-		a.log.Debug("unable to parse duration", slog.String("ParseDuration", err.Error()))
-	}
-	if err == nil {
-		return parseDuration
-	}
-
-	seconds, err := strconv.Atoi(s)
-	if err != nil {
-		a.log.Debug("unable to string convert", slog.String("Atoi", err.Error()))
-	}
-	if err == nil {
+	if seconds, err := strconv.Atoi(s); err == nil {
 		return time.Duration(seconds) * time.Second
 	}
 
-	return defaultRetryAfter
+	if t, err := http.ParseTime(s); err == nil {
+		wait := time.Until(t)
+		if wait > 0 {
+			return wait
+		}
+	}
+
+	return time.Duration(defaultRetryAfter) * time.Second
 }
