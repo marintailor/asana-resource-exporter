@@ -151,6 +151,13 @@ func newConfig(opts options) (*config, error) {
 	if opts.cfg.entrypoint == "" {
 		return nil, errors.New("entrypoint not provided")
 	}
+	if opts.cfg.resource == "" {
+		return nil, errors.New("resource type not provided")
+	}
+	if opts.cfg.rate < 1 {
+		return nil, errors.New("rate limit must be positive")
+	}
+
 	// Additional validation, check if entrypoint is a valid URL
 
 	return &opts.cfg, nil
