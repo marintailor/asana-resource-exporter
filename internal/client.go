@@ -1,3 +1,4 @@
+// Package internal provides internal utilities for the Asana resource exporter.
 package internal
 
 import (
@@ -7,8 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/time/rate"
 )
@@ -21,22 +22,23 @@ var (
 // Client wraps http.Client with Asana API authentication.
 type Client struct {
 	*http.Client
-	token   string
-	limiter *rate.Limiter
+	token    string
+	limiter  *rate.Limiter
+	shutdown chan struct{} // Channel to signal shutdown
 }
 
-// NewClient creates a Client instance using ASANA_API_TOKEN from environment.
-func NewClient(r int) (*Client, error) {
-	t, ok := os.LookupEnv("ASANA_API_TOKEN")
-	if !ok {
-		return nil, errors.New("token not present")
-	}
+// CloseIdleConnections closes any idle HTTP connections.
+func (c *Client) CloseIdleConnections() {
+	c.Client.CloseIdleConnections()
+}
 
+// NewClient creates a Client instance with provided token t and rate r..
+func NewClient(t string, r int) (*Client, error) {
 	return &Client{
-		Client:  &http.Client{},
-		token:   t,
-		limiter: rate.NewLimiter(rate.Limit(r/60), r),
-		// limiter: rate.NewLimiter(rate.Limit(2), 2),
+		Client:   &http.Client{},
+		token:    t,
+		limiter:  rate.NewLimiter(rate.Limit(r/60), r),
+		shutdown: make(chan struct{}),
 	}, nil
 }
 
@@ -46,9 +48,16 @@ func (c *Client) Request(ctx context.Context, url string, body io.Reader) (*http
 		return nil, ErrInvalidEndpoint
 	}
 
-	if !c.limiter.Allow() {
-		return nil, ErrReachedLimit
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
+
+	if err := c.limiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit wait: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, body)
 	if err != nil {
@@ -59,6 +68,12 @@ func (c *Client) Request(ctx context.Context, url string, body io.Reader) (*http
 
 	resp, err := c.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("do request: %w", err)
 	}
 
@@ -67,7 +82,6 @@ func (c *Client) Request(ctx context.Context, url string, body io.Reader) (*http
 
 // validEndpoint validates if the given string is a valid API endpoint URL.
 func validEndpoint(rawURL string) bool {
-	// Reject empty or whitespace-only strings
 	if strings.TrimSpace(rawURL) == "" {
 		return false
 	}
@@ -77,18 +91,15 @@ func validEndpoint(rawURL string) bool {
 		return false
 	}
 
-	// Must have scheme and host
 	if u.Scheme == "" || u.Host == "" {
 		return false
 	}
 
-	// Only allow HTTP/HTTPS schemes
 	scheme := strings.ToLower(u.Scheme)
 	if scheme != "http" && scheme != "https" {
 		return false
 	}
 
-	// Reject URLs with fragments (#)
 	if u.Fragment != "" {
 		return false
 	}
@@ -98,7 +109,6 @@ func validEndpoint(rawURL string) bool {
 		return false
 	}
 
-	// Optional: Reject localhost and private IPs for production
 	host := strings.ToLower(u.Host)
 	if strings.Contains(host, "localhost") ||
 		strings.Contains(host, "127.0.0.1") ||
@@ -106,7 +116,6 @@ func validEndpoint(rawURL string) bool {
 		return false
 	}
 
-	// Optional: Check URL length (adjust limit as needed)
 	if len(rawURL) > 2048 {
 		return false
 	}
