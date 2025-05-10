@@ -1,4 +1,5 @@
-// Package internal provides internal utilities for the Asana resource exporter.
+// Package internal provides internal utilities for the Asana resource exporter,
+// including HTTP client management, rate limiting, and API authentication.
 package internal
 
 import (
@@ -16,23 +17,26 @@ import (
 
 var (
 	ErrInvalidEndpoint = errors.New("invalid endpoint")
-	ErrReachedLimit    = errors.New("reached limit")
+	ErrReachedLimit = errors.New("reached limit")
 )
 
-// Client wraps http.Client with Asana API authentication.
+// Client wraps http.Client with Asana API authentication and rate limiting capabilities.
+// It manages API request rates and provides clean shutdown functionality.
 type Client struct {
-	*http.Client
-	token    string
-	limiter  *rate.Limiter
-	shutdown chan struct{} // Channel to signal shutdown
+	*http.Client               // Embedded HTTP client for making requests
+	token        string        // Asana API authentication token
+	limiter      *rate.Limiter // Rate limiter for API requests
+	shutdown     chan struct{} // Channel to signal shutdown
 }
 
-// CloseIdleConnections closes any idle HTTP connections.
+// CloseIdleConnections closes any idle HTTP connections in the underlying client.
+// This should be called during cleanup to free resources.
 func (c *Client) CloseIdleConnections() {
 	c.Client.CloseIdleConnections()
 }
 
-// NewClient creates a Client instance with provided token t and rate r..
+// NewClient creates a Client instance with provided token t and rate limit r.
+// The rate r specifies the maximum number of requests allowed per minute.
 func NewClient(t string, r int) (*Client, error) {
 	return &Client{
 		Client:   &http.Client{},
@@ -43,6 +47,8 @@ func NewClient(t string, r int) (*Client, error) {
 }
 
 // Request performs an authenticated HTTP GET request to the specified Asana endpoint.
+// It handles rate limiting, request timeouts, and authentication. The request can be
+// cancelled via the provided context.
 func (c *Client) Request(ctx context.Context, url string, body io.Reader) (*http.Response, error) {
 	if !validEndpoint(url) {
 		return nil, ErrInvalidEndpoint
@@ -81,6 +87,8 @@ func (c *Client) Request(ctx context.Context, url string, body io.Reader) (*http
 }
 
 // validEndpoint validates if the given string is a valid API endpoint URL.
+// It checks for proper URL format, allowed schemes (http/https), and rejects
+// localhost/private IP addresses and URLs with fragments or user info.
 func validEndpoint(rawURL string) bool {
 	if strings.TrimSpace(rawURL) == "" {
 		return false
@@ -104,7 +112,6 @@ func validEndpoint(rawURL string) bool {
 		return false
 	}
 
-	// Reject URLs with user info
 	if u.User != nil {
 		return false
 	}

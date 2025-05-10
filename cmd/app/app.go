@@ -1,3 +1,4 @@
+// Package main provides the application core for the Asana resource exporter.
 package main
 
 import (
@@ -28,42 +29,40 @@ const (
 	permissions int    = 0o755
 )
 
-// app orchestrates the resource export operations.
+// app orchestrates the resource export operations, managing configuration,
+// logging, API client, and concurrency control.
 type app struct {
-	cfg    *config
-	log    *slog.Logger
-	client *internal.Client
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	done   chan struct{}
+	cfg    *config            // Application configuration
+	log    *slog.Logger       // Structured logger
+	client *internal.Client   // Asana API client
+	cancel context.CancelFunc // Context cancellation function
+	wg     sync.WaitGroup     // Tracks running goroutines
+	done   chan struct{}      // Signals application shutdown
 }
 
-// Resource represents an Asana resource with its properties.
-type Resource struct {
-	GID          string `json:"gid"`
-	Name         string `json:"name"`
-	ResourceType string `json:"resource_type"`
-}
-
+// options holds application configuration and logging settings parsed from command-line flags.
 type options struct {
-	cfg config
-	log logging
+	cfg config  // Application configuration settings
+	log logging // Logging configuration settings
 }
 
+// config defines API-related configuration settings for the application.
 type config struct {
-	entrypoint string
-	interval   string
-	resource   string
-	rate       int
+	entrypoint string // Asana API endpoint URL
+	interval   string // Export interval duration (e.g., "10s", "1m")
+	resource   string // Resource type to export (e.g., "project", "user")
+	rate       int    // API request rate limit per minute
 }
 
+// logging defines logging-related configuration settings.
 type logging struct {
-	debug  bool
-	format string
-	output string
+	debug  bool   // Enable debug logging level
+	format string // Log format (json or text)
+	output string // Log output destination (file path or stdout)
 }
 
-// newApp creates and configures a new application instance.
+// newApp creates and configures a new application instance with settings from
+// command-line flags and environment variables. It initializes logging and the API client.
 func newApp() (*app, error) {
 	var a app
 
@@ -103,6 +102,7 @@ func newApp() (*app, error) {
 	return &a, nil
 }
 
+// newOptions parses command-line flags into application and logging configuration options.
 func newOptions() (options, error) {
 	var o options
 
@@ -118,6 +118,8 @@ func newOptions() (options, error) {
 	return o, nil
 }
 
+// newConfig validates and creates a new configuration from the provided options.
+// It ensures required fields are set and values are within acceptable ranges.
 func newConfig(opts options) (*config, error) {
 	if opts.cfg.entrypoint == "" {
 		return nil, errors.New("entrypoint not provided")
@@ -132,14 +134,14 @@ func newConfig(opts options) (*config, error) {
 	return &opts.cfg, nil
 }
 
-// validLogFormat returns whether the provided log format is supported.
+// validLogFormat checks if the provided log format is supported (json or text).
 func validLogFormat(format string) bool {
 	return format == "json" || format == "text"
 }
 
-// newLogger creates a new structured logger with the given options. The logger writes to either
-// a file specified by opts.log.output or stdout if no output file is provided. It supports
-// both JSON and text formats.
+// newLogger creates a new structured logger with the given options.
+// It configures the log level, format (JSON or text), and output destination (file or stdout).
+// The logger supports debug level messages when enabled through options.
 func newLogger(opts options) (*slog.Logger, error) {
 	if !validLogFormat(opts.log.format) {
 		return nil, fmt.Errorf("unsupported log format: %s", opts.log.format)

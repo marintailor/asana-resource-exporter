@@ -1,12 +1,11 @@
-// Package main provides the main entry point for the Asana resource extractor application.
+// Package main provides the main entry point for the Asana resource exporter application.
+// It handles initialization, configuration, logging setup, and graceful shutdown.
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -62,6 +61,9 @@ func (a *app) run() error {
 	return a.runOnce(ctx)
 }
 
+// parseInterval converts the configured interval string into a time.Duration.
+// It validates that the interval is at least 1 second if specified.
+// Returns 0 duration if no interval was configured.
 func (a *app) parseInterval() (time.Duration, error) {
 	if a.cfg.interval == "" {
 		return 0, nil
@@ -79,6 +81,9 @@ func (a *app) parseInterval() (time.Duration, error) {
 	return interval, nil
 }
 
+// runWithInterval executes export operations periodically at the specified interval.
+// It manages concurrent exports using goroutines and aggregates errors.
+// The operation continues until the context is cancelled or a fatal error occurs.
 func (a *app) runWithInterval(ctx context.Context, interval time.Duration) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -115,6 +120,8 @@ func (a *app) runWithInterval(ctx context.Context, interval time.Duration) error
 	}
 }
 
+// runOnce performs a single export operation and returns any errors encountered.
+// It respects context cancellation for graceful shutdown.
 func (a *app) runOnce(ctx context.Context) error {
 	var errs []error
 	if err := a.export(ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -124,155 +131,12 @@ func (a *app) runOnce(ctx context.Context) error {
 	return a.finish(ctx, errs)
 }
 
-func (a *app) export(ctx context.Context) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	data, err := a.fetchData(ctx)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return fmt.Errorf("fetch data: %w", err)
-	}
-
-	resources, err := a.resources(data)
-	if err != nil {
-		return fmt.Errorf("retrieve resources: %w", err)
-	}
-
-	if err := a.resourceDir(); err != nil {
-		return fmt.Errorf("resource directory: %w", err)
-	}
-
-	for _, rc := range resources {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			a.storeResource(rc)
-		}
-	}
-
-	a.log.Debug("finished iterating resources")
-
-	return nil
-}
-
-func (a *app) fetchData(ctx context.Context) ([]byte, error) {
-	a.log.Debug("fetch data")
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		endpoint := fmt.Sprintf("%s/%ss", a.cfg.entrypoint, a.cfg.resource)
-		resp, err := a.client.Request(ctx, endpoint, nil)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			return nil, fmt.Errorf("make request: %w", err)
-		}
-
-		defer func() {
-			if resp != nil && resp.Body != nil {
-				if err := resp.Body.Close(); err != nil {
-					a.log.Error("close request body", slog.String("error", err.Error()))
-				}
-			}
-		}()
-
-		a.log.Debug("check response status code")
-		if resp.StatusCode == http.StatusTooManyRequests {
-			ra := resp.Header.Get("Retry-After")
-			if ra != "" {
-				wait := a.retryAfter(ra)
-				a.log.Warn("too many requests",
-					slog.String("retry_after", wait.String()),
-					slog.Int("default_wait", defaultRetryAfter))
-
-				timer := time.NewTimer(wait)
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					return nil, ctx.Err()
-				case <-timer.C:
-					continue
-				}
-			}
-		}
-
-		a.log.Debug("read response body")
-		data, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("read request body: %w", err)
-		}
-		a.log.Debug("finished reading response body")
-
-		return data, nil
-	}
-}
-
-func (a *app) resourceDir() error {
-	dir, err := os.Stat(dataDir + "/" + a.cfg.resource)
-	if err != nil {
-		switch {
-		case errors.Is(err, os.ErrNotExist):
-			a.log.Warn("destination directory does not exist",
-				slog.String("path", "data/"+a.cfg.resource),
-			)
-			if err := os.MkdirAll("data/"+a.cfg.resource, os.FileMode(permissions)); err != nil {
-				return fmt.Errorf("make dir: %w", err)
-			}
-		default:
-			return fmt.Errorf("dir stat: %w", err)
-		}
-	}
-
-	if !dir.IsDir() {
-		return fmt.Errorf("%q not directory", dir.Name())
-	}
-
-	return nil
-}
-
-func (a *app) resources(d []byte) ([]Resource, error) {
-	var output struct {
-		Data []Resource `json:"data"`
-	}
-
-	if err := json.Unmarshal(d, &output); err != nil {
-		return nil, fmt.Errorf("unmarshal data: %w", err)
-	}
-
-	return output.Data, nil
-}
-
-func (a *app) storeResource(rc Resource) {
-	a.log.Debug("store resource")
-	filename := fmt.Sprintf("data/%ss/%[1]s_%s_%s.json", a.cfg.resource, rc.Name, time.Now().Format("20060102150405"))
-	file, err := os.Create(filename)
-	if err != nil {
-		a.log.Error("create file", slog.String("error", err.Error()), slog.String("filename", filename))
-	}
-
-	defer func() {
-		if err := file.Close(); err != nil {
-			a.log.Error("close file", slog.String("error", err.Error()), slog.String("filename", filename))
-		}
-	}()
-
-	encoder := json.NewEncoder(file)
-	if err := encoder.Encode(rc); err != nil {
-		a.log.Error("encode outout", slog.String("error", err.Error()))
-	}
-	a.log.Debug("resource stored")
-}
-
 // retryAfter parses a Retry-After header value and returns the duration to wait.
-// It supports HTTP-date, delta-seconds, and duration formats.
+// It supports three formats:
+// - Duration string (e.g., "30s", "1m")
+// - Number of seconds as integer
+// - HTTP date format
+// If parsing fails, it returns the default retry duration.
 func (a *app) retryAfter(s string) time.Duration {
 	if d, err := time.ParseDuration(s); err == nil {
 		return d
@@ -292,7 +156,9 @@ func (a *app) retryAfter(s string) time.Duration {
 	return time.Duration(defaultRetryAfter) * time.Second
 }
 
-// finish handles cleanup and returns appropriate status
+// finish handles cleanup operations and aggregates errors before shutdown.
+// It waits for running operations to complete with a timeout and returns
+// any errors encountered during execution.
 func (a *app) finish(ctx context.Context, errs []error) error {
 	go func() {
 		a.wg.Wait()
@@ -314,7 +180,8 @@ func (a *app) finish(ctx context.Context, errs []error) error {
 	return nil
 }
 
-// cleanup performs necessary cleanup operations during shutdown
+// cleanup performs cleanup operations during shutdown, including closing
+// idle connections. It implements a timeout to prevent hanging during cleanup.
 func (a *app) cleanup() {
 	select {
 	case <-a.done:
