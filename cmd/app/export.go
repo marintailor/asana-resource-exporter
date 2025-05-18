@@ -46,9 +46,7 @@ func (a *app) export(ctx context.Context, data []byte, dir string) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			fmt.Println(rcDir)
-			filename := fmt.Sprintf("%s%s_%s_%s.json", rcDir, a.cfg.resource, rc.Name, time.Now().Format("20060102150405"))
-			fmt.Println(filename)
+			filename := fmt.Sprintf("%s/%s_%s_%s.json", rcDir, a.cfg.resource, rc.Name, time.Now().Format("20060102150405"))
 			if err := a.storeResource(rc, filename); err != nil {
 				return fmt.Errorf("store resource: %w", err)
 			}
