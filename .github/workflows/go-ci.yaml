@@ -1,0 +1,108 @@
+name: Go CI
+
+on:
+    push:
+        branches-ignore:
+            - main
+        paths-ignore:
+            - '**/.gitignore'
+            - '**/LICENSE'
+            - '**/README.md'
+
+jobs:
+    test:
+        name: Test
+        runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                go-version: ["1.24.2"]
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up Go
+              uses: actions/setup-go@v4
+              with:
+                  go-version: ${{ matrix.go-version }}
+                  cache: true
+
+            - name: Download dependencies
+              run: go mod download
+
+            # - name: Run tests with coverage
+            #   run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+            # - name: Upload coverage to Codecov
+            #   uses: codecov/codecov-action@v3
+            #   with:
+            #       files: ./coverage.txt
+
+    lint:
+        name: Lint
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up Go
+              uses: actions/setup-go@v4
+              with:
+                  go-version: "1.24.2"
+                  cache: true
+
+            - name: Verify formatting
+              run: |
+                  if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+                    gofmt -s -l .
+                    exit 1
+                  fi
+
+            - name: Run vet
+              run: go vet ./...
+
+            - name: Run golangci-lint
+              uses: golangci/golangci-lint-action@v3
+              with:
+                  version: v1.64.2
+                  args: --timeout=5m
+
+    build:
+        name: Build
+        needs: [test, lint]
+        runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                go-version: ["1.24.2"]
+                platform: [ubuntu-latest, macos-latest, windows-latest]
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up Go
+              uses: actions/setup-go@v4
+              with:
+                  go-version: ${{ matrix.go-version }}
+                  cache: true
+
+            - name: Build
+              run: go build -v -o bin/app ./cmd/app
+
+    security:
+        name: Security Scan
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Run Gosec Security Scanner
+              uses: securego/gosec@master
+              with:
+                  args: ./...
+
+            - name: Run govulncheck
+              uses: golang/govulncheck-action@v1
+              with:
+                  go-version-input: "1.24.2"
+                  check-latest: true
