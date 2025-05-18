@@ -87,12 +87,6 @@ jobs:
             - name: Build
               run: go build -v -o bin/app ./cmd/app
 
-            - name: Upload artifact
-              uses: actions/upload-artifact@v3
-              with:
-                  name: app-${{ matrix.platform }}
-                  path: bin/app*
-
     security:
         name: Security Scan
         runs-on: ubuntu-latest
