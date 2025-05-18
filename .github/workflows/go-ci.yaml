@@ -1,5 +1,5 @@
 name: Go CI
-run-name: GitHub Actions for Go CI pipeline
+run-name: Go CI
 on: [push]
 jobs:
     build:
@@ -25,4 +25,4 @@ jobs:
                   version: v1.64.2
 
             - name: Run build
-              run: go build -o app .
+              run: go build -o bin/app ./cmd/app
