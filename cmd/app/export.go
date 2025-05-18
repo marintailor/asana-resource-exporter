@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -162,9 +164,29 @@ func (a *app) resources(d []byte) ([]Resource, error) {
 // storeResource persists a resource as JSON in the data directory.
 // Filename format: {resource_type}_{name}_{timestamp}.json.
 // Returns error if file creation or JSON encoding fails.
+// It prevents directory traversal by validating the provided filename.
 func (a *app) storeResource(rc Resource, filename string) error {
 	a.log.Debug("store resource")
-	file, err := os.Create(filename)
+
+	// Clean the path to handle any . or .. components
+	cleanPath := filepath.Clean(filename)
+
+	// Ensure the path is within the data directory by checking it starts with the expected prefix
+	dataDirAbs, err := filepath.Abs(a.cfg.dataDir)
+	if err != nil {
+		return fmt.Errorf("get absolute data directory path: %w", err)
+	}
+
+	fileAbs, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return fmt.Errorf("get absolute file path: %w", err)
+	}
+
+	if !strings.HasPrefix(fileAbs, dataDirAbs) {
+		return fmt.Errorf("invalid file path: attempts to write outside data directory")
+	}
+
+	file, err := os.OpenFile(cleanPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		a.log.Error("create file", slog.String("error", err.Error()), slog.String("filename", filename))
 		return err

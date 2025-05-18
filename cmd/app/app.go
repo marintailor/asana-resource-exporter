@@ -157,7 +157,7 @@ func newLogger(opts options) (*slog.Logger, error) {
 	var output *os.File
 	switch {
 	case opts.log.output != "":
-		file, err := os.OpenFile(opts.log.output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		file, err := os.OpenFile(opts.log.output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
 			return nil, fmt.Errorf("log output: %w", err)
 		}
