@@ -13,7 +13,7 @@ jobs:
         runs-on: ubuntu-latest
         strategy:
             matrix:
-                go-version: ["1.21.x"]
+                go-version: ["1.24.2"]
 
         steps:
             - name: Checkout code
@@ -46,7 +46,7 @@ jobs:
             - name: Set up Go
               uses: actions/setup-go@v4
               with:
-                  go-version: "1.21.x"
+                  go-version: "1.24.2"
                   cache: true
 
             - name: Verify formatting
@@ -76,7 +76,7 @@ jobs:
         runs-on: ubuntu-latest
         strategy:
             matrix:
-                go-version: ["1.21.x"]
+                go-version: ["1.24.2"]
                 platform: [ubuntu-latest, macos-latest, windows-latest]
 
         steps:
@@ -113,5 +113,5 @@ jobs:
             - name: Run govulncheck
               uses: golang/govulncheck-action@v1
               with:
-                  go-version-input: "1.21.x"
+                  go-version-input: "1.24.2"
                   check-latest: true
