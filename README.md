@@ -16,6 +16,10 @@ A high-performance Go application for exporting resources from Asana's API. Feat
 - Concurrent export operations
 - Context-aware cancellation
 - Robust error handling and reporting
+- Secure file operations with:
+  - Path traversal protection
+  - Restrictive file permissions (0600)
+  - Safe file handling practices
 
 ## Prerequisites
 
@@ -67,10 +71,15 @@ asana-resource-exporter -resource=task -interval=1m -log-format=json
 
 ## Data Storage
 
-Exported resources are stored in JSON format under the `{data-dir}/{resource_type}` directory (where data-dir defaults to "data" but can be configured), with filenames containing the resource name and timestamp.
+Exported resources are stored in JSON format under the `{data-dir}/{resource_type}` directory (where data-dir defaults to "data" but can be configured), with filenames containing the resource name and timestamp. All files are created with secure permissions (0600) and protected against path traversal attacks.
 
 Example with default data-dir: `data/projects/project_MyProject_20240205143022.json`
 Example with custom data-dir: `/exports/data/projects/project_MyProject_20240205143022.json`
+
+The application enforces strict security measures:
+- Files are created with 0600 permissions (owner read/write only)
+- Paths are validated to prevent directory traversal attacks
+- File operations are restricted to the configured data directory
 
 ## Error Handling
 
@@ -86,6 +95,8 @@ The application implements comprehensive error handling:
   - Malformed URLs
   - Invalid rate limits
   - Directory permission issues
+  - Path traversal attempts
+  - File permission violations
 
 All errors are logged with:
 - Detailed error context
