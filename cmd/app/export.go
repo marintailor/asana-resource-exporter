@@ -12,29 +12,23 @@ import (
 	"time"
 )
 
-// Resource represents an Asana resource with its identifying properties.
-// It contains the minimal set of fields common to all Asana resources
-// that are necessary for export operations.
+// Resource represents an Asana resource with core identifying properties.
+// All Asana resources share these common fields which provide the minimal
+// information needed for export and tracking. The GID is guaranteed to be
+// unique within a workspace.
 type Resource struct {
-	GID          string `json:"gid"`           // Unique identifier for the resource
-	Name         string `json:"name"`          // Display name of the resource
-	ResourceType string `json:"resource_type"` // Type of the resource (e.g., "project", "user")
+	GID          string `json:"gid"`           // Global unique identifier from Asana
+	Name         string `json:"name"`          // Human-readable resource name
+	ResourceType string `json:"resource_type"` // Resource category (project, task, user, etc.)
 }
 
-// export performs the main resource export operation. It fetches data from the Asana API,
-// processes the resources, and stores them in the filesystem. It respects context cancellation
-// for graceful shutdown.
-func (a *app) export(ctx context.Context) error {
+// export fetches resources from Asana and persists them to the filesystem.
+// It processes each resource sequentially and creates timestamped JSON files.
+// The operation can be cancelled via context. Returns error if the export fails
+// or is cancelled.
+func (a *app) export(ctx context.Context, data []byte, dir string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
-	}
-
-	data, err := a.fetchData(ctx)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return fmt.Errorf("fetch data: %w", err)
 	}
 
 	resources, err := a.resources(data)
@@ -42,7 +36,8 @@ func (a *app) export(ctx context.Context) error {
 		return fmt.Errorf("retrieve resources: %w", err)
 	}
 
-	if err := a.resourceDir(); err != nil {
+	rcDir := dir + "/" + a.cfg.resource
+	if err := a.resourceDir(rcDir); err != nil {
 		return fmt.Errorf("resource directory: %w", err)
 	}
 
@@ -51,7 +46,12 @@ func (a *app) export(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			a.storeResource(rc)
+			fmt.Println(rcDir)
+			filename := fmt.Sprintf("%s%s_%s_%s.json", rcDir, a.cfg.resource, rc.Name, time.Now().Format("20060102150405"))
+			fmt.Println(filename)
+			if err := a.storeResource(rc, filename); err != nil {
+				return fmt.Errorf("store resource: %w", err)
+			}
 		}
 	}
 
@@ -60,9 +60,10 @@ func (a *app) export(ctx context.Context) error {
 	return nil
 }
 
-// fetchData retrieves resource data from the Asana API, handling rate limiting and retries.
-// It automatically retries requests when encountering rate limit responses (429)
-// using the Retry-After header value.
+// fetchData retrieves resources from the Asana API with rate limit handling.
+// When receiving a 429 response, it automatically retries using the Retry-After
+// header or falls back to default backoff. The operation respects context
+// cancellation.
 func (a *app) fetchData(ctx context.Context) ([]byte, error) {
 	a.log.Debug("fetch data")
 	for {
@@ -118,19 +119,21 @@ func (a *app) fetchData(ctx context.Context) ([]byte, error) {
 	}
 }
 
-// resourceDir ensures the data directory for the current resource type exists.
-// If the directory doesn't exist, it creates it with appropriate permissions.
-func (a *app) resourceDir() error {
-	dir, err := os.Stat(dataDir + "/" + a.cfg.resource)
+// resourceDir creates or verifies the export directory for a resource type.
+// It ensures proper permissions (0755) and returns error if the path exists
+// but is not a directory or if creation fails.
+func (a *app) resourceDir(dst string) error {
+	dir, err := os.Stat(dst)
 	if err != nil {
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			a.log.Warn("destination directory does not exist",
-				slog.String("path", "data/"+a.cfg.resource),
+				slog.String("path", dst),
 			)
-			if err := os.MkdirAll("data/"+a.cfg.resource, os.FileMode(permissions)); err != nil {
+			if err := os.MkdirAll(dst, os.FileMode(permissions)); err != nil {
 				return fmt.Errorf("make dir: %w", err)
 			}
+			return nil
 		default:
 			return fmt.Errorf("dir stat: %w", err)
 		}
@@ -143,8 +146,9 @@ func (a *app) resourceDir() error {
 	return nil
 }
 
-// resources unmarshals the raw JSON response data into a slice of Resource objects.
-// It handles the Asana API response format where resources are nested in a data field.
+// resources decodes Asana API response data into Resource objects.
+// Asana wraps resources in a "data" field array. Returns error if
+// JSON unmarshaling fails or response format is invalid.
 func (a *app) resources(d []byte) ([]Resource, error) {
 	var output struct {
 		Data []Resource `json:"data"`
@@ -157,14 +161,15 @@ func (a *app) resources(d []byte) ([]Resource, error) {
 	return output.Data, nil
 }
 
-// storeResource writes a single resource to a JSON file in the data directory.
-// The filename includes the resource type, name, and current timestamp for uniqueness.
-func (a *app) storeResource(rc Resource) {
+// storeResource persists a resource as JSON in the data directory.
+// Filename format: {resource_type}_{name}_{timestamp}.json.
+// Returns error if file creation or JSON encoding fails.
+func (a *app) storeResource(rc Resource, filename string) error {
 	a.log.Debug("store resource")
-	filename := fmt.Sprintf("data/%ss/%[1]s_%s_%s.json", a.cfg.resource, rc.Name, time.Now().Format("20060102150405"))
 	file, err := os.Create(filename)
 	if err != nil {
 		a.log.Error("create file", slog.String("error", err.Error()), slog.String("filename", filename))
+		return err
 	}
 
 	defer func() {
@@ -178,4 +183,6 @@ func (a *app) storeResource(rc Resource) {
 		a.log.Error("encode outout", slog.String("error", err.Error()))
 	}
 	a.log.Debug("resource stored")
+
+	return nil
 }

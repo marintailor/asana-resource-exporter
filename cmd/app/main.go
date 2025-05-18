@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	app, err := newApp()
+	app, err := newApp(os.Args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize application: %v\n", err)
 		os.Exit(1)
@@ -94,7 +94,15 @@ func (a *app) runWithInterval(ctx context.Context, interval time.Duration) error
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		if err := a.export(ctx); err != nil && !errors.Is(err, context.Canceled) {
+
+		data, err := a.fetchData(ctx)
+		if err != nil {
+			a.log.Error("fetch data", slog.String("error", err.Error()))
+			errCh <- err
+			return
+		}
+
+		if err := a.export(ctx, data, a.cfg.dataDir); err != nil && !errors.Is(err, context.Canceled) {
 			a.log.Error("export error", slog.String("error", err.Error()))
 			errCh <- err
 		}
@@ -109,7 +117,15 @@ func (a *app) runWithInterval(ctx context.Context, interval time.Duration) error
 			a.wg.Add(1)
 			go func() {
 				defer a.wg.Done()
-				if err := a.export(ctx); err != nil && !errors.Is(err, context.Canceled) {
+
+				data, err := a.fetchData(ctx)
+				if err != nil {
+					a.log.Error("fetch data", slog.String("error", err.Error()))
+					errCh <- err
+					return
+				}
+
+				if err := a.export(ctx, data, a.cfg.dataDir); err != nil && !errors.Is(err, context.Canceled) {
 					a.log.Error("export error", slog.String("error", err.Error()))
 					errCh <- err
 				}
@@ -124,10 +140,19 @@ func (a *app) runWithInterval(ctx context.Context, interval time.Duration) error
 // It respects context cancellation for graceful shutdown.
 func (a *app) runOnce(ctx context.Context) error {
 	var errs []error
-	if err := a.export(ctx); err != nil && !errors.Is(err, context.Canceled) {
+
+	data, err := a.fetchData(ctx)
+	if err != nil {
+		a.log.Error("fetch data", slog.String("error", err.Error()))
+		errs = append(errs, err)
+		return a.finish(ctx, errs)
+	}
+
+	if err := a.export(ctx, data, a.cfg.dataDir); err != nil && !errors.Is(err, context.Canceled) {
 		a.log.Error("export error", slog.String("error", err.Error()))
 		errs = append(errs, err)
 	}
+
 	return a.finish(ctx, errs)
 }
 
@@ -148,6 +173,7 @@ func (a *app) retryAfter(s string) time.Duration {
 
 	if t, err := http.ParseTime(s); err == nil {
 		wait := time.Until(t)
+		fmt.Println(wait)
 		if wait > 0 {
 			return wait
 		}

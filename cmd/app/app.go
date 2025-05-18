@@ -24,9 +24,8 @@ const (
 	defaultLogFormat string = "text"
 	defaultLogOutput string = ""
 
-	// Data defaults
-	dataDir     string = "data"
-	permissions int    = 0o755
+	// File system defaults
+	permissions int = 0o755
 )
 
 // app orchestrates the resource export operations, managing configuration,
@@ -52,6 +51,7 @@ type config struct {
 	interval   string // Export interval duration (e.g., "10s", "1m")
 	resource   string // Resource type to export (e.g., "project", "user")
 	rate       int    // API request rate limit per minute
+	dataDir    string // Directory path for storing exported resources
 }
 
 // logging defines logging-related configuration settings.
@@ -63,10 +63,11 @@ type logging struct {
 
 // newApp creates and configures a new application instance with settings from
 // command-line flags and environment variables. It initializes logging and the API client.
-func newApp() (*app, error) {
+// Args contain the command-line arguments (e.g., os.Args).
+func newApp(args []string) (*app, error) {
 	var a app
 
-	opts, err := newOptions()
+	opts, err := newOptions(args)
 	if err != nil {
 		return nil, fmt.Errorf("new options: %w", err)
 	}
@@ -103,17 +104,23 @@ func newApp() (*app, error) {
 }
 
 // newOptions parses command-line flags into application and logging configuration options.
-func newOptions() (options, error) {
+// Args contain the command-line arguments to parse (e.g., os.Args).
+func newOptions(args []string) (options, error) {
 	var o options
 
-	flag.StringVar(&o.cfg.entrypoint, "entrypoint", defaultEntrypoint, "Asana API entrypoint")
-	flag.StringVar(&o.cfg.interval, "interval", defaultInterval, "interval duration at which to fetch data; ex: 10s, 1m; default: none")
-	flag.IntVar(&o.cfg.rate, "rate", defaultRateLimit, "request rate limit per minute. ex: 10, 150")
-	flag.StringVar(&o.cfg.resource, "resource", "", "Asana resource type to be exported. ex: project, user")
-	flag.BoolVar(&o.log.debug, "debug", false, "enable debug log messages")
-	flag.StringVar(&o.log.format, "log-format", defaultLogFormat, "log message format. ex: json, text")
-	flag.StringVar(&o.log.output, "log-output", defaultLogOutput, "path to file where to store log message; ex: relative/path/app.log, /absolute/path/app/log; default: STDOUT")
-	flag.Parse()
+	flags := flag.NewFlagSet(args[0], flag.ExitOnError)
+	flags.StringVar(&o.cfg.entrypoint, "entrypoint", defaultEntrypoint, "Asana API entrypoint")
+	flags.StringVar(&o.cfg.interval, "interval", defaultInterval, "interval duration at which to fetch data; ex: 10s, 1m; default: none")
+	flags.IntVar(&o.cfg.rate, "rate", defaultRateLimit, "request rate limit per minute. ex: 10, 150")
+	flags.StringVar(&o.cfg.resource, "resource", "", "Asana resource type to be exported. ex: project, user")
+	flags.BoolVar(&o.log.debug, "debug", false, "enable debug log messages")
+	flags.StringVar(&o.log.format, "log-format", defaultLogFormat, "log message format. ex: json, text")
+	flags.StringVar(&o.log.output, "log-output", defaultLogOutput, "path to file where to store log message; ex: relative/path/app.log, /absolute/path/app/log; default: STDOUT")
+	flags.StringVar(&o.cfg.dataDir, "data-dir", "data", "directory path where exported resources will be stored")
+
+	if err := flags.Parse(args[1:]); err != nil {
+		return options{}, fmt.Errorf("parse flags: %w", err)
+	}
 
 	return o, nil
 }
