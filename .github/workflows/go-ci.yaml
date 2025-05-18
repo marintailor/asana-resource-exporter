@@ -1,5 +1,4 @@
 name: Go CI
-run-name: Go CI
 
 on:
     push:
