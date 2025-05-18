@@ -1,21 +1,28 @@
 # Asana Resource Exporter
 
-A Go application for exporting resources from Asana's API with advanced features like configurable rate limiting, interval-based exports, and structured logging.
+A high-performance Go application for exporting resources from Asana's API. Features include configurable rate limiting, interval-based exports, structured logging, and robust error handling. Designed for reliability and efficiency when managing large-scale Asana data exports.
+
+    NOTE: This repository contains a complete and detailed implementation of an application originally developed as part of a live coding assignment during a technical interview process.
 
 ## Features
 
-- Export any Asana resource type (projects, users, etc.)
-- Configurable rate limiting to respect API constraints
-- Interval-based data export with customizable durations
-- Graceful shutdown handling
-- Structured logging with JSON/text formats
-- Automatic retry handling for rate limits (429 responses)
-- Data persistence to local files
+- Export any Asana resource type (projects, users, tasks, etc.)
+- Smart rate limiting with automatic backoff
+- Configurable export intervals (one-time or periodic)
+- Graceful shutdown with cleanup
+- Structured logging (JSON/text) with debug support
+- Automatic retry with exponential backoff for rate limits
+- Local file persistence with timestamp-based naming
+- Concurrent export operations
+- Context-aware cancellation
+- Robust error handling and reporting
 
 ## Prerequisites
 
 - Go 1.21 or higher
-- Asana API token
+- Asana API token with appropriate permissions
+- Sufficient disk space for exports
+- Network access to Asana API endpoints
 
 ## Installation
 
@@ -35,6 +42,7 @@ go install github.com/marintailor/asana-resource-exporter@latest
 - `-interval` - Export interval duration (e.g., "10s", "1m") (default: none)
 - `-rate` - Request rate limit per minute (default: 150)
 - `-resource` - Resource type to export (e.g., "project", "user") (required)
+- `-data-dir` - Directory where exported resources will be stored (default: "data")
 - `-debug` - Enable debug logging (default: false)
 - `-log-format` - Log format ["json", "text"] (default: "text")
 - `-log-output` - Log output file path (default: stdout)
@@ -47,26 +55,43 @@ export ASANA_API_TOKEN="your_token_here"
 asana-resource-exporter -resource=project
 ```
 
-Export users every minute with debug logging:
+Export users to custom directory with debug logging:
 ```bash
-asana-resource-exporter -resource=user -interval=1m -debug -log-format=json
+asana-resource-exporter -resource=user -data-dir=/exports/asana -debug
+```
+
+Export tasks every minute with JSON logging:
+```bash
+asana-resource-exporter -resource=task -interval=1m -log-format=json
 ```
 
 ## Data Storage
 
-Exported resources are stored in JSON format under the `data/{resource_type}` directory, with filenames containing the resource name and timestamp.
+Exported resources are stored in JSON format under the `{data-dir}/{resource_type}` directory (where data-dir defaults to "data" but can be configured), with filenames containing the resource name and timestamp.
 
-Example: `data/projects/project_MyProject_20240205143022.json`
+Example with default data-dir: `data/projects/project_MyProject_20240205143022.json`
+Example with custom data-dir: `/exports/data/projects/project_MyProject_20240205143022.json`
 
 ## Error Handling
 
-The application includes robust error handling for:
-- API rate limits (with automatic retries)
-- Network issues
-- Invalid configurations
-- Resource access problems
+The application implements comprehensive error handling:
 
-All errors are logged with appropriate context and the application exits with a non-zero status code on fatal errors.
+- API Rate Limits
+  - Automatic retry with exponential backoff
+  - Respects Retry-After headers
+  - Configurable maximum retry attempts
+
+- Configuration Errors
+  - Invalid API tokens
+  - Malformed URLs
+  - Invalid rate limits
+  - Directory permission issues
+
+All errors are logged with:
+- Detailed error context
+- Stack traces in debug mode
+- Structured fields for easier parsing
+- Non-zero exit codes for fatal errors
 
 ## Development
 
@@ -76,20 +101,35 @@ All errors are logged with appropriate context and the application exits with a 
 asana-resource-exporter/
 ├── cmd/
 │   └── app/
-│       ├── app.go        # Application setup and configuration
-│       ├── export.go     # Resource export logic
-│       └── main.go       # Entry point
+│       ├── app.go        # Core application setup and DI
+│       ├── export.go     # Resource export orchestration
+│       └── main.go       # Entry point and signal handling
 ├── internal/
-│   ├── client.go         # HTTP client with rate limiting
-│   └── validator.go      # URL validation utilities
-└── README.md
+│   ├── client.go         # Rate-limited HTTP client
+├── README.md            # Documentation
+└── LICENSE             # MIT License
 ```
 
 ### Building
 
+Development build:
 ```bash
 go build -o asana-resource-exporter ./cmd/app
 ```
+
+Production build with optimizations:
+```bash
+go build -ldflags="-s -w" -o asana-resource-exporter ./cmd/app
+```
+
+## Roadmap
+
+- [ ] Add support for bulk exports
+- [ ] Implement export filters (by date, status, etc.)
+- [ ] Enhanced error recovery strategies
+- [ ] Add metrics collection and monitoring
+- [ ] Add support for parallel workspace exports
+- [ ] Implement real-time export streaming
 
 ## License
 
