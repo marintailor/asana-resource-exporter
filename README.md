@@ -2,7 +2,7 @@
 
 A high-performance Go application for exporting resources from Asana's API. Features include configurable rate limiting, interval-based exports, structured logging, and robust error handling. Designed for reliability and efficiency when managing large-scale Asana data exports.
 
-    NOTE: This repository contains a complete and detailed implementation of an application originally developed as part of a live coding assignment during a technical interview process.
+**NOTE:** This repository contains a complete and detailed implementation of an application originally developed as part of a live coding assignment during a technical interview process.
 
 ## Features
 
