@@ -22,7 +22,7 @@ jobs:
             - name: golangci-lint
               uses: golangci/golangci-lint-action@v3
               with:
-                  version: v2.0.2
+                  version: v8.0.0
 
             - name: Run build
               run: go build -o app .
