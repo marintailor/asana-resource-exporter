@@ -104,6 +104,17 @@ All errors are logged with:
 - Structured fields for easier parsing
 - Non-zero exit codes for fatal errors
 
+## Continuous Integration
+
+The project uses GitHub Actions for CI, running on all non-main branch pushes. The workflow includes:
+
+- **Testing**: Runs unit tests with race detection
+- **Linting**: Ensures code quality via:
+  - `gofmt` for consistent formatting
+  - `go vet` for static analysis
+  - `golangci-lint` for comprehensive linting
+- **Building**: Cross-platform builds for Linux, macOS, and Windows
+
 ## Development
 
 ### Project Structure
